@@ -6,8 +6,8 @@ import tornado_dns
 
 io_loop = tornado.ioloop.IOLoop.instance()
 
-class Trit(object):
 
+class Trit(object):
     OFF = 0
     ON = 1
     ERR = 2
@@ -40,6 +40,7 @@ class Trit(object):
         else:
             raise ValueError('val = %r' % (val,))
 
+
 @contextmanager
 def test_context(ctx):
     ctx.trit_final = Trit.ON
@@ -47,13 +48,16 @@ def test_context(ctx):
     yield
     ctx.trit.check(ctx.trit_final)
 
+
 def callback(func):
     @wraps(func)
     def inner(*args, **kwargs):
         ret = func(*args, **kwargs)
         io_loop.stop()
         return ret
+
     return inner
+
 
 def testcase(*extra_requires):
     def outer(func):
@@ -62,10 +66,14 @@ def testcase(*extra_requires):
         def inner(ctx):
             def run():
                 return func(ctx)
+
             io_loop.add_callback(run)
             io_loop.start()
+
         return inner
+
     return outer
+
 
 @testcase()
 def test_basic_a_record(ctx):
@@ -73,7 +81,9 @@ def test_basic_a_record(ctx):
     def success(records):
         ctx.trit.on()
         assert records['iomonad.com'] == '173.230.147.249'
+
     tornado_dns.lookup('iomonad.com', success)
+
 
 @testcase()
 def test_simple_cname(ctx):
@@ -82,7 +92,9 @@ def test_simple_cname(ctx):
         ctx.trit.on()
         assert records['cname1.iomonad.com'] == '173.230.147.249'
         assert records['cname1.iomonad.com'] == records['iomonad.com']
+
     tornado_dns.lookup('cname1.iomonad.com', success)
+
 
 @testcase()
 def test_complex_cname(ctx):
@@ -92,7 +104,9 @@ def test_complex_cname(ctx):
         assert records['cname2.iomonad.com'] == '173.230.147.249'
         assert records['cname2.iomonad.com'] == records['cname1.iomonad.com']
         assert records['cname1.iomonad.com'] == records['iomonad.com']
+
     tornado_dns.lookup('cname2.iomonad.com', success)
+
 
 if __name__ == '__main__':
     qa.main()

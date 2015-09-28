@@ -6,8 +6,8 @@ import tornado.ioloop
 from tornado_dns.resolv import *
 from tornado_dns.dns import *
 
-class _errors(object):
 
+class _errors(object):
     _codes = [
         (1, 'TIMEOUT', 'The query timed out'),
         (2, 'NO_NAMESERVERS', 'No nameserver was available to fulfil the request'),
@@ -22,11 +22,14 @@ class _errors(object):
     def describe(self, num):
         return '%s: %s' % self._descriptions[num]
 
+
 errors = _errors()
+
 
 def invoke_errback(errback, code):
     if errback is not None:
         errback(code)
+
 
 def get_socket(errback, server):
     if server is None:
@@ -39,13 +42,13 @@ def get_socket(errback, server):
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     sock.setblocking(0)
     return server, sock
-    
 
-def lookup(name, callback, errback=None, timeout=None, server=None):
+
+def lookup(name, callback, errback=None, timeout=None, server=None, use_compress=True):
     io_loop = tornado.ioloop.IOLoop.instance()
     server, sock = get_socket(errback, server)
     timeout_obj = None
-    query = DNSPacket.create_a_question(name)
+    query = DNSPacket.create_a_question(name, use_compress)
 
     def read_response(fd, events):
         try:
@@ -57,7 +60,7 @@ def lookup(name, callback, errback=None, timeout=None, server=None):
                 io_loop.add_handler(fd, read_response, io_loop.READ)
                 return
             raise
-        response = DNSPacket.from_wire(data)
+        response = DNSPacket.from_wire(data, use_compress)
         callback(response.get_answer_names())
         io_loop.remove_handler(fd)
 

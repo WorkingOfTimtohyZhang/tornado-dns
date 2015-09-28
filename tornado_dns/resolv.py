@@ -5,6 +5,7 @@ import socket
 
 _nameservers = None
 
+
 def get_nameservers():
     global _nameservers
     if _nameservers is None:
@@ -18,5 +19,6 @@ def get_nameservers():
         except IOError:
             pass
     return _nameservers
+
 
 __all__ = ['get_nameservers']

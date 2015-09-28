@@ -6,24 +6,28 @@ import struct
 
 _counter = threading.local()
 
+
 def read_counter():
     value = getattr(_counter, 'value', 1)
     _counter.value = value + 1
     return value
 
+
 def ntoh16(s):
     return (ord(s[0]) << 8) + ord(s[1])
+
 
 def ntoh32(s):
     hi = ntoh16(s)
     lo = ntoh16(s[2:])
     return (hi << 16) + lo
 
+
 class StructError(Exception):
     pass
 
-class StructBuilder(object):
 
+class StructBuilder(object):
     def __init__(self):
         self.clear()
 
@@ -67,8 +71,8 @@ class StructBuilder(object):
         self.trailing_bits = 0
         self.trailing_val = 0
 
-class StructReader(object):
 
+class StructReader(object):
     def __init__(self, bytes, pos=0):
         self.bytes = bytes
         self.pos = pos
@@ -126,7 +130,7 @@ class StructReader(object):
                 self.pos -= 1
                 self.pos = self.read_num(16) & 0x3fff
                 name += self.read_name(strip_trailing_dot=False)
-                self.pos = next_pos # XXX: what did I flub here?
+                self.pos = next_pos  # XXX: what did I flub here?
                 break
 
         if strip_trailing_dot:
@@ -136,8 +140,9 @@ class StructReader(object):
     def read_bytes(self, length):
         if self.pos > len(self.bytes):
             raise StructError("self.pos = %d, len(self.bytes) = %d" % (self.pos, len(self.bytes)))
-        data = self.bytes[self.pos:self.pos+length]
+        data = self.bytes[self.pos:self.pos + length]
         self.pos += length
         return data
+
 
 __all__ = ['read_counter', 'StructBuilder', 'StructReader']

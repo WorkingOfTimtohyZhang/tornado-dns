@@ -2,16 +2,18 @@ import socket
 
 from tornado_dns._struct import *
 
+
 class ParseError(Exception):
     pass
 
-class DNSPacket(object):
 
+class DNSPacket(object):
     def __init__(self, raw=None):
         self.raw = raw
 
+    # \x00\x00\x01\x00\x00\x01\x00\x00\x00\x00\x00\x00\xc0\x12\x00\x01\x00\x01\x07twitter\x03com\x00
     @classmethod
-    def create_with_header(cls, **kwargs):
+    def create_with_header(cls, use_compress=True, **kwargs):
         packet = cls()
 
         packet._questions = kwargs.get('questions', [])
@@ -32,20 +34,22 @@ class DNSPacket(object):
         packet.nscount = len(packet._authorities)
         packet.arcount = len(packet._additionals)
 
-        overrides = dict((k, v) for k, v in kwargs.iteritems() if not k not in ('questions', 'answers', 'authorities', 'additionals'))
+        cls.use_compress = use_compress
+        overrides = dict((k, v) for k, v in kwargs.iteritems() if
+                         not k not in ('questions', 'answers', 'authorities', 'additionals'))
         packet.__dict__.update(overrides)
         return packet
 
     @classmethod
-    def create_a_question(cls, name):
-        return cls.create_with_header(questions=[AQuestion(name)])
+    def create_a_question(cls, name, use_compress=True):
+        return cls.create_with_header(questions=[AQuestion(name)], use_compress=use_compress)
 
     @classmethod
     def create_ptr_question(cls, address):
         return cls.create_with_header(questions=[PTRQuestion(address)])
 
     @classmethod
-    def from_wire(cls, data):
+    def from_wire(cls, data, use_compress=True):
         packet = cls(data)
 
         reader = StructReader(data)
@@ -66,7 +70,7 @@ class DNSPacket(object):
         packet.nscount = reader.read_num(16)
         packet.arcount = reader.read_num(16)
 
-        packet._questions = [Question.from_wire(reader) for x in xrange(packet.qdcount)]
+        packet._questions = [Question.from_wire(reader, use_compress) for x in xrange(packet.qdcount)]
         packet._answers = [ResourceRecord.from_wire(reader) for x in xrange(packet.ancount)]
         packet._authorities = [None for x in xrange(packet.nscount)]
         packet._additionals = [None for x in xrange(packet.arcount)]
@@ -81,21 +85,21 @@ class DNSPacket(object):
         builder.push_bits(self.tc, 1)
         builder.push_bits(self.rd, 1)
         builder.push_bits(self.ra, 1)
-        builder.push_bits(0, 3) # reserved bits
+        builder.push_bits(0, 3)  # reserved bits
         builder.push_bits(self.rcode, 4)
         builder.push_num(self.qdcount, 16)
         builder.push_num(self.ancount, 16)
         builder.push_num(self.nscount, 16)
         builder.push_num(self.arcount, 16)
 
-        def add_section(sections):
+        def add_section(sections, use_compress):
             for s in sections:
-                s.build(builder)
+                s.build(builder, use_compress)
 
-        add_section(self._questions)
-        add_section(self._answers)
-        add_section(self._authorities)
-        add_section(self._authorities)
+        add_section(self._questions, self.use_compress)
+        add_section(self._answers, self.use_compress)
+        add_section(self._authorities, self.use_compress)
+        add_section(self._authorities, self.use_compress)
         return builder.read()
 
     def get_answer_names(self):
@@ -119,7 +123,7 @@ class DNSPacket(object):
                     reduced.add(cname)
             if not reduced:
                 for cname in cnames:
-                    results[cname.name] = None # we were unable to resolve this CNAME
+                    results[cname.name] = None  # we were unable to resolve this CNAME
                 break
             else:
                 cnames = cnames - reduced
@@ -127,15 +131,16 @@ class DNSPacket(object):
                     break
         return results
 
-class Question(object):
 
+class Question(object):
     qtype = 0
 
-    def __init__(self, name):
+    def __init__(self, name, use_compress=True):
         self.qname = name
-        self.qclass = 1 # IN
+        self.qclass = 1  # IN
+        self.use_compress = use_compress
 
-    def build(self, builder):
+    def build(self, builder, use_compress=True):
         name = self.qname
         if name[-1] != '.':
             name += '.'
@@ -143,26 +148,36 @@ class Question(object):
             pos = name.find('.')
             builder.push_string(chr(pos) + name[:pos])
             name = name[pos + 1:]
-        builder.push_string(chr(0))
-        builder.push_num(self.qtype, 16) # TYPE = self.rdtype
-        builder.push_num(1, 16) # QCLASS = IN
+
+        if use_compress:
+            builder.push_string(chr(192))
+            builder.push_string(chr(4))
+        else:
+            builder.push_string(chr(0))
+
+        builder.push_num(self.qtype, 16)  # TYPE = self.rdtype
+        builder.push_num(1, 16)  # QCLASS = IN
 
     @classmethod
-    def from_wire(cls, reader):
+    def from_wire(cls, reader, use_compress=True):
         name = reader.read_name()
         qtype = reader.read_num(16)
         qclass = reader.read_num(16)
-        q = Question(name)
+        q = Question(name, use_compress)
         q.qtype = qtype
         q.qclass = qclass
+        q.compress = use_compress
         return q
 
     def __str__(self):
         return '%s(qname=%r, qtype=%d, qclass=%d)' % (self.__class__.__name__, self.qname, self.qtype, self.qclass)
+
     __repr__ = __str__
+
 
 class AQuestion(Question):
     qtype = 1
+
 
 class PTRQuestion(Question):
     qtype = 12
@@ -172,8 +187,8 @@ class PTRQuestion(Question):
         name = '.'.join(reversed(address.split('.'))) + '.in-addr.arpa'
         super(PTRQuestion, self).__init__(name)
 
+
 class ResourceRecord(object):
-    
     def __init__(self):
         self._value = None
 
@@ -225,5 +240,7 @@ class ResourceRecord(object):
         return socket.inet_ntoa(self.rdata)
 
     def __str__(self):
-        return '%s(name=%r, type=%s, class=%s, ttl=%d, rdlength=%d)' % (self.__class__.__name__, self.name, self.type_name(), self.class_name(), self.ttl, self.rdlength)
+        return '%s(name=%r, type=%s, class=%s, ttl=%d, rdlength=%d)' % (
+            self.__class__.__name__, self.name, self.type_name(), self.class_name(), self.ttl, self.rdlength)
+
     __repr__ = __str__
