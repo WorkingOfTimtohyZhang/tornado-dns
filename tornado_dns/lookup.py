@@ -44,7 +44,7 @@ def get_socket(errback, server):
     return server, sock
 
 
-def lookup(name, callback, errback=None, timeout=None, server=None, use_compress=True):
+def lookup(name, callback, errback=None, timeout=None, server=None, port=53, use_compress=True):
     io_loop = tornado.ioloop.IOLoop.instance()
     server, sock = get_socket(errback, server)
     timeout_obj = None
@@ -69,7 +69,7 @@ def lookup(name, callback, errback=None, timeout=None, server=None, use_compress
             io_loop.remove_timeout(timeout_obj)
 
     def send_query(fd, events):
-        sock.sendto(query.to_wire(), (server, 53))
+        sock.sendto(query.to_wire(), (server, port))
         io_loop.remove_handler(fd)
         io_loop.add_handler(fd, read_response, io_loop.READ)
 
